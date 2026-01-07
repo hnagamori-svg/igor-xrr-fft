@@ -1,9 +1,11 @@
-﻿"""
-XRR FFT Thickness Analysis Core Module
+"""
+XRR FFT 膜厚解析 コアモジュール
 
-Paper: Lammel et al., Appl. Phys. Lett. 117, 213106 (2020)
-DOI: 10.1063/5.0024991
-ArXdF: 2008.04626v2
+X線反射率(XRR)データをFFT解析し、薄膜の膜厚を決定する。
+
+参考文献:
+    Lammel et al., Appl. Phys. Lett. 117, 213106 (2020)
+    DOI: 10.1063/5.0024991
 """
 
 import numpy as np
@@ -56,7 +58,7 @@ class GaussianFitResult:
 
 def xrr_to_q_space(two_theta, intensity, critical_angle, wavelength=0.152):
     s_cor = 2 * np.sqrt(
-        (np.cos(np.pi * critical_angle / 2 / 180))**2 - 
+        (np.cos(np.pi * critical_angle / 2 / 180))**2 -
         (np.cos(np.pi * two_theta / 2 / 180))**2
     ) / wavelength
     intensity_corrected = s_cor**4 * intensity
@@ -68,7 +70,7 @@ def interpolate_to_equal_spacing(s_cor, intensity, n_points=1000):
     s_valid = s_cor[mask]
     intensity_valid = intensity[mask]
     if len(s_valid) < 4:
-        raise ValueError("Not enough data points above critical angle")
+        raise ValueError("臨界角以上のデータ点が不足しています")
     x = np.linspace(s_valid.min(), s_valid.max(), n_points)
     f = interpolate.interp1d(s_valid, intensity_valid, kind="cubic")
     return x, f(x)
@@ -154,7 +156,7 @@ def fit_noise_background(xf, yf, mask_ranges=None):
     if np.sum(mask) < 3:
         return 1.0, 2.0
     try:
-        popt, _ = curve_fit(func_noise, xf[mask], yf[mask], 
+        popt, _ = curve_fit(func_noise, xf[mask], yf[mask],
                             p0=[1.0, 2.0], bounds=(0, np.inf), maxfev=5000)
         return popt[0], popt[1]
     except:
@@ -168,23 +170,23 @@ def fit_multi_gaussian(xf, yf, initial_guess=None, fit_range=(1.1, 80),
     mask = (xf > fit_range[0]) & (xf < fit_range[1])
     xf_fit, yf_fit = xf[mask], yf[mask]
     if len(xf_fit) < 12:
-        raise ValueError("Not enough data points in fit range")
-    
+        raise ValueError("フィッティング範囲内のデータ点が不足")
+
     amp_init, ex_init = fit_noise_background(xf, yf, noise_mask_ranges)
     if initial_guess is None:
         initial_guess = [0.2, 0.3, 0.2, 7.0, 0.3, 0.2, 13.0, 0.3, amp_init, ex_init, 2e-3]
-    
+
     popt, pcov = curve_fit(func_gauss3, xf_fit, yf_fit, p0=initial_guess,
                            bounds=(0, np.inf), maxfev=10000)
-    
+
     a1, w1, a2, pmax2, w2, a3, pmax3, w3, amp, ex, z0 = popt
     pmax1 = pmax3 - pmax2
-    
+
     x_dense = np.linspace(xf_fit.min(), xf_fit.max(), 500)
     y_pred = func_gauss3(xf_fit, *popt)
     ss_res = np.sum((yf_fit - y_pred)**2)
     ss_tot = np.sum((yf_fit - np.mean(yf_fit))**2)
-    
+
     return GaussianFitResult(
         thickness_layer1=pmax1, thickness_layer2=pmax2, thickness_total=pmax3,
         params=popt, params_cov=pcov, x_fit=x_dense,
@@ -214,22 +216,22 @@ class XRRAnalysisResult:
 def analyze_xrr(two_theta, intensity, params=None, do_fitting=True, fit_initial_guess=None):
     if params is None:
         params = XRRParameters()
-    
+
     q_space, intensity_corrected = xrr_to_q_space(
         two_theta, intensity, params.critical_angle, params.wavelength)
     q_interp, intensity_interp = interpolate_to_equal_spacing(
         q_space, intensity_corrected, params.interpolation_points)
     fft_result = perform_fft(q_interp, intensity_interp,
                              params.window_type, params.zero_padding_factor)
-    
+
     fit_result = None
     if do_fitting:
         try:
             fit_result = fit_multi_gaussian(fft_result.freq, fft_result.amplitude,
                                            initial_guess=fit_initial_guess)
         except Exception as e:
-            print(f"Warning: Fitting failed: {e}")
-    
+            print(f"警告: フィッティング失敗: {e}")
+
     return XRRAnalysisResult(
         two_theta_raw=two_theta, intensity_raw=intensity,
         q_space=q_space, intensity_corrected=intensity_corrected,
